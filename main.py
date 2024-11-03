@@ -229,9 +229,9 @@ def slice_with_validation(stl_path, output_dir, bed_size, target_height, max_att
         print("Failed to find valid slicing solution after maximum attempts")
 
 # Example usage:
-stl_path = r"E:\iCloud Files\iCloudDrive\3D Printer\Things\Champagne Bottle (1_18 scale) - 2740717\files\champagne.stl"
+stl_path = r"E:\iCloud Files\iCloudDrive\3D Printer\Things\Cubone Dog Mask - 2839481\files\Cubone_Skull_XY_Printable_for_Dog.stl"
 output_dir = r"F:\Homebrew\Make It Big\output"
 bed_size = 300  # Printer bed size in mm
-target_height = 2  # Desired height in feet
+target_height = 1  # Desired height in feet
 
 slice_with_validation(stl_path, output_dir, bed_size, target_height)
