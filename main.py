@@ -10,7 +10,8 @@ CONFIG = {
     'printer_bed_size': 300,    # Printer bed size in mm
     'safety_margin': 0,         # Safety margin in mm
     'input_file': r"E:\iCloud Files\iCloudDrive\3D Printer\Things\Monkey_Butler_Ring_Holder_3703834\files\MonkeyButler.stl",
-    'height_axis': 'z'          # Which axis to apply height scaling to ('x', 'y', or 'z')
+    'height_axis': 'z',         # Which axis to apply height scaling to ('x', 'y', or 'z')
+    'output_base_dir': r"F:\Homebrew\Big Stuff"  # Base directory for all outputs
 }
 
 def get_max_size():
@@ -21,7 +22,8 @@ def get_target_height_mm():
 
 def get_output_dir():
     base_name = Path(CONFIG['input_file']).stem
-    return f"{base_name}_{CONFIG['target_height_feet']}ft_{CONFIG['height_axis']}_height"
+    output_dir_name = f"{base_name}_{CONFIG['target_height_feet']}ft_{CONFIG['height_axis']}_height"
+    return os.path.join(CONFIG['output_base_dir'], output_dir_name)
 
 def get_axis_index(axis_letter):
     return {'x': 0, 'y': 1, 'z': 2}[axis_letter.lower()]
