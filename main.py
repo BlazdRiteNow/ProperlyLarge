@@ -3,6 +3,7 @@ import numpy as np
 import os
 import shutil
 from pathlib import Path
+import traceback
 
 def process_stl(config):
     """Main processing function that takes a config dictionary"""
@@ -63,56 +64,151 @@ def scale_stl_to_height(config):
     mesh.apply_scale(scale_factor)
     return mesh
 
-# Your existing split_mesh function remains largely the same
+def create_dovetail(mesh, cut_plane_origin, cut_plane_normal, dovetail_depth=10, dovetail_angle=15):
+    """Create a dovetail joint at the cutting plane"""
+    try:
+        print("\nDovetail Creation Debug:")
+        print(f"Mesh bounds: {mesh.bounds}")
+        print(f"Cut plane origin: {cut_plane_origin}")
+        print(f"Cut plane normal: {cut_plane_normal}")
+        
+        # Convert angle to radians
+        angle_rad = np.radians(dovetail_angle)
+        print(f"Dovetail angle (rad): {angle_rad}")
+        
+        # Calculate mesh dimensions for dovetail sizing
+        mesh_height = mesh.bounds[1][2] - mesh.bounds[0][2]
+        print(f"Mesh height: {mesh_height}")
+        
+        # Create the dovetail shape with proper (n,2) vertices
+        dovetail_vertices = np.array([
+            [-dovetail_depth * np.tan(angle_rad), -dovetail_depth],
+            [dovetail_depth * np.tan(angle_rad), -dovetail_depth],
+            [0, 0],
+            [-dovetail_depth * np.tan(angle_rad)/2, -dovetail_depth/2]
+        ])
+        print(f"Dovetail vertices:\n{dovetail_vertices}")
+        
+        # Create faces for triangulation
+        dovetail_faces = np.array([
+            [0, 1, 3],
+            [1, 2, 3],
+            [2, 0, 3]
+        ])
+        print(f"Dovetail faces:\n{dovetail_faces}")
+        
+        try:
+            # Create the dovetail mesh
+            dovetail = trimesh.creation.extrude_triangulation(
+                vertices=dovetail_vertices,
+                faces=dovetail_faces,
+                height=mesh_height
+            )
+            print("Dovetail mesh created successfully")
+            print(f"Dovetail bounds: {dovetail.bounds}")
+            return dovetail
+            
+        except Exception as e:
+            print(f"Error in extrude_triangulation: {str(e)}")
+            return None
+            
+    except Exception as e:
+        print(f"Error in dovetail creation: {str(e)}")
+        print(f"Stack trace: {traceback.format_exc()}")
+        return None
+
 def split_mesh(mesh, output_dir, piece_number=0, config=None):
     try:
-        # Check if piece fits within build volume
         dims = mesh.bounds[1] - mesh.bounds[0]
-        
-        # Get max size from config
         max_size = config['printer_bed_size'] - config['safety_margin']
         
-        # Only split if a dimension is significantly larger than the max size
-        if max(dims) > max_size:
-            # Find largest dimension
-            axis = np.argmax(dims)
+        # Add dimension check before attempting split
+        min_dimension = 20  # Or whatever minimum size makes sense for your use case
+        
+        for axis in range(3):
+            dimensions = mesh.bounds[1] - mesh.bounds[0]
             
-            # Calculate cut position
-            mid_point = (mesh.bounds[1][axis] + mesh.bounds[0][axis]) / 2
+            # Skip if dimension is already small enough
+            if dimensions[axis] <= min_dimension:
+                continue
             
-            # Create cutting plane
-            plane_normal = np.zeros(3)
-            plane_normal[axis] = 1
-            plane_origin = np.zeros(3)
-            plane_origin[axis] = mid_point
-            
-            # Split the mesh
-            first_half = mesh.slice_plane(
-                plane_origin=plane_origin,
-                plane_normal=plane_normal,
-                cap=True
-            )
-            
-            second_half = mesh.slice_plane(
-                plane_origin=plane_origin,
-                plane_normal=[-x for x in plane_normal],
-                cap=True
-            )
-            
-            # Process both halves
-            if first_half is not None:
-                piece_number = split_mesh(first_half, output_dir, piece_number, config)
-            
-            if second_half is not None:
-                piece_number = split_mesh(second_half, output_dir, piece_number, config)
-            
-            return piece_number
+            if dimensions[axis] > max_size:
+                mid_point = (mesh.bounds[1][axis] + mesh.bounds[0][axis]) / 2
+                
+                print(f"\nSplitting piece {piece_number}:")
+                print(f"Dimensions: {dims}")
+                print(f"Splitting along axis {axis} at position {mid_point}")
+                
+                # Create cutting plane
+                plane_normal = np.zeros(3)
+                plane_normal[axis] = 1
+                plane_origin = np.zeros(3)
+                plane_origin[axis] = mid_point
+                
+                # Try to create dovetail
+                try:
+                    print("\nAttempting dovetail creation...")
+                    dovetail = create_dovetail(mesh, plane_origin, plane_normal)
+                    
+                    if dovetail is not None:
+                        print("Dovetail created successfully, applying to split...")
+                        # First create the basic splits
+                        male_half = mesh.slice_plane(
+                            plane_origin=plane_origin,
+                            plane_normal=plane_normal,
+                            cap=True
+                        )
+                        female_half = mesh.slice_plane(
+                            plane_origin=plane_origin,
+                            plane_normal=[-x for x in plane_normal],
+                            cap=True
+                        )
+                        
+                        # Now apply the dovetail
+                        if male_half is not None and female_half is not None:
+                            try:
+                                print("Applying dovetail to split pieces...")
+                                male_half = male_half.union(dovetail)
+                                female_half = female_half.difference(dovetail)
+                                print("Dovetail applied successfully")
+                            except Exception as e:
+                                print(f"Error applying dovetail: {str(e)}")
+                                # Continue with the original splits
+                    else:
+                        print("Dovetail creation returned None")
+                        raise ValueError("Dovetail creation failed")
+                        
+                except Exception as e:
+                    print(f"Falling back to simple split: {str(e)}")
+                    # Simple split without dovetail
+                    male_half = mesh.slice_plane(
+                        plane_origin=plane_origin,
+                        plane_normal=plane_normal,
+                        cap=True
+                    )
+                    female_half = mesh.slice_plane(
+                        plane_origin=plane_origin,
+                        plane_normal=[-x for x in plane_normal],
+                        cap=True
+                    )
+                
+                # Process both halves if they exist
+                if male_half is not None:
+                    piece_number = split_mesh(male_half, output_dir, piece_number, config)
+                if female_half is not None:
+                    piece_number = split_mesh(female_half, output_dir, piece_number, config)
+                
+                return piece_number
         else:
-            # Save this piece as it's within the target size
-            filename = os.path.join(output_dir, f'piece_{piece_number}.stl')
-            mesh.export(filename)
-            print(f"Saved {filename} with dimensions {dims}")
-            return piece_number + 1
+            # This piece is small enough to print
+            if mesh is not None:
+                filename = os.path.join(output_dir, f'piece_{piece_number}.stl')
+                mesh.export(filename)
+                print(f"Saved {filename} with dimensions {dims}")
+                return piece_number + 1
+            else:
+                print(f"Warning: Skipping null mesh for piece {piece_number}")
+                return piece_number
             
     except Exception as e:
         print(f"Error in split_mesh: {str(e)}")
