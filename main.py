@@ -3,21 +3,41 @@ import numpy as np
 import os
 import shutil
 from pathlib import Path
+import psutil
+import triangle
 
 def process_stl(config):
     """Main processing function that takes a config dictionary"""
     try:
+        print("Starting STL processing...")
+        
+        # Set the triangulation engine explicitly
+        trimesh.constants.triangulator = 'triangle'
+        
+        # Validate height axis
+        print("Validating configuration...")
+        if config['height_axis'].lower() not in ['x', 'y', 'z']:
+            raise ValueError("height_axis must be 'x', 'y', or 'z'")
+        
+        print(f"Loading STL file: {config['input_file']}")
+        mesh = trimesh.load(config['input_file'])
+        print(f"STL loaded successfully. Original size: {mesh.bounds}")
+        
+        print("Calculating scaling factors...")
+        # Add more print statements throughout the process
+        
+        print(f"Memory usage: {psutil.Process().memory_info().rss / 1024 / 1024:.2f} MB")
+        
         # Validate height axis
         if config['height_axis'].lower() not in ['x', 'y', 'z']:
             raise ValueError("height_axis must be 'x', 'y', or 'z'")
         
-        # Create output directory
+        print(f"Creating output directory...")
         output_dir = get_output_dir(config)
         if os.path.exists(output_dir):
             shutil.rmtree(output_dir)
         os.makedirs(output_dir)
         
-        # Load and scale model
         print(f"Loading and scaling model to {config['target_height_feet']} feet along {config['height_axis']}-axis...")
         scaled_model = scale_stl_to_height(config)
         
@@ -35,6 +55,8 @@ def process_stl(config):
         print(f"- Safety margin: {config['safety_margin']}mm")
         print(f"- Total pieces: {piece_count}")
         print(f"- Output directory: {output_dir}")
+        
+        return output_dir
         
     except Exception as e:
         print(f"Error in process_stl: {str(e)}")
