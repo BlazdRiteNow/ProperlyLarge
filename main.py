@@ -3,9 +3,12 @@ import numpy as np
 import os
 import shutil
 from pathlib import Path
+import gc  # Garbage collection
+import tempfile
 
 def process_stl(config):
     """Main processing function that takes a config dictionary"""
+    temp_dir = None
     try:
         # Validate height axis
         if config['height_axis'].lower() not in ['x', 'y', 'z']:
@@ -14,8 +17,22 @@ def process_stl(config):
         # Create output directory
         output_dir = get_output_dir(config)
         if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
+            # Ensure we can remove all files
+            for root, dirs, files in os.walk(output_dir, topdown=False):
+                for name in files:
+                    os.remove(os.path.join(root, name))
+                for name in dirs:
+                    os.rmdir(os.path.join(root, name))
+            os.rmdir(output_dir)
         os.makedirs(output_dir)
+        
+        # Load mesh
+        mesh = trimesh.load_mesh(config['input_file'])
+        
+        # Note about large meshes
+        if len(mesh.vertices) > 100000:
+            print(f"Warning: Large mesh detected ({len(mesh.vertices)} vertices)")
+            print("Mesh simplification is not available in this environment")
         
         # Load and scale model
         print(f"Loading and scaling model to {config['target_height_feet']} feet along {config['height_axis']}-axis...")
@@ -39,6 +56,15 @@ def process_stl(config):
     except Exception as e:
         print(f"Error in process_stl: {str(e)}")
         raise
+    finally:
+        # Force garbage collection
+        gc.collect()
+        # Clean up any temporary files that might be left
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception as e:
+                print(f"Warning: Could not clean up temporary directory: {e}")
 
 def get_max_size(config):
     return config['printer_bed_size'] - config['safety_margin']
