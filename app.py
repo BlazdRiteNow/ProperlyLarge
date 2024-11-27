@@ -5,6 +5,7 @@ import tempfile
 import zipfile
 from main import process_stl
 import gc  # Garbage collection
+import shutil
 
 app = Flask(__name__)
 
@@ -14,6 +15,7 @@ def health_check():
 
 @app.route('/process', methods=['POST'])
 def process_stl_endpoint():
+    temp_dir = None
     try:
         # Force garbage collection before processing
         gc.collect()
@@ -34,52 +36,66 @@ def process_stl_endpoint():
         if size > 50 * 1024 * 1024:  # 50MB in bytes
             return jsonify({"error": "File too large"}), 400
 
-        # Process in chunks using temporary directory
-        with tempfile.TemporaryDirectory() as temp_dir:
-            try:
-                target_height_feet = float(request.form.get('target_height_feet', 2))
-                height_axis = request.form.get('height_axis', 'z')
-                
-                # Save uploaded file
-                input_path = os.path.join(temp_dir, secure_filename(file.filename))
-                file.save(input_path)
-                
-                # Configure processing
-                config = {
-                    "target_height_feet": target_height_feet,
-                    "printer_bed_size": 300,
-                    "safety_margin": 5,
-                    "input_file": input_path,
-                    "height_axis": height_axis,
-                    "output_base_dir": temp_dir
-                }
-                
-                # Process STL
-                process_stl(config)
-                
-                # Create zip file of results
-                zip_path = os.path.join(temp_dir, "results.zip")
-                with zipfile.ZipFile(zip_path, 'w') as zipf:
-                    for root, dirs, files in os.walk(temp_dir):
-                        for file in files:
-                            if file.endswith('.stl'):
-                                file_path = os.path.join(root, file)
-                                arcname = os.path.basename(file_path)
-                                zipf.write(file_path, arcname)
-                
-                return send_file(
-                    zip_path,
-                    mimetype='application/zip',
-                    as_attachment=True,
-                    download_name='processed_stl.zip'
-                )
-                
-            finally:
-                # Force cleanup
+        # Create temporary directory manually instead of using context manager
+        temp_dir = tempfile.mkdtemp()
+        try:
+            target_height_feet = float(request.form.get('target_height_feet', 2))
+            height_axis = request.form.get('height_axis', 'z')
+            
+            # Save uploaded file
+            input_path = os.path.join(temp_dir, secure_filename(file.filename))
+            file.save(input_path)
+            
+            # Configure processing
+            config = {
+                "target_height_feet": target_height_feet,
+                "printer_bed_size": 300,
+                "safety_margin": 5,
+                "input_file": input_path,
+                "height_axis": height_axis,
+                "output_base_dir": temp_dir
+            }
+            
+            # Process STL - this now returns the output directory path
+            output_dir = process_stl(config)
+            
+            # Create zip file of results
+            zip_path = os.path.join(temp_dir, "results.zip")
+            with zipfile.ZipFile(zip_path, 'w') as zipf:
+                for root, dirs, files in os.walk(output_dir):
+                    for file in files:
+                        if file.endswith('.stl'):
+                            file_path = os.path.join(root, file)
+                            arcname = os.path.relpath(file_path, output_dir)
+                            zipf.write(file_path, arcname)
+            
+            response = send_file(
+                zip_path,
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name='processed_stl.zip'
+            )
+            
+            # Clean up after sending file
+            @response.call_on_close
+            def cleanup():
+                try:
+                    if temp_dir and os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                except Exception as e:
+                    print(f"Cleanup error: {e}")
                 gc.collect()
+            
+            return response
+                
+        except Exception as e:
+            # Clean up on error
+            if temp_dir and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            gc.collect()
+            raise
                 
     except Exception as e:
-        gc.collect()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/')
