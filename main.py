@@ -8,7 +8,6 @@ import tempfile
 
 def process_stl(config):
     """Main processing function that takes a config dictionary"""
-    temp_dir = None
     try:
         # Validate height axis
         if config['height_axis'].lower() not in ['x', 'y', 'z']:
@@ -53,18 +52,11 @@ def process_stl(config):
         print(f"- Total pieces: {piece_count}")
         print(f"- Output directory: {output_dir}")
         
+        return output_dir  # Return the output directory path
+        
     except Exception as e:
         print(f"Error in process_stl: {str(e)}")
         raise
-    finally:
-        # Force garbage collection
-        gc.collect()
-        # Clean up any temporary files that might be left
-        if temp_dir and os.path.exists(temp_dir):
-            try:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-            except Exception as e:
-                print(f"Warning: Could not clean up temporary directory: {e}")
 
 def get_max_size(config):
     return config['printer_bed_size'] - config['safety_margin']
@@ -73,9 +65,16 @@ def get_target_height_mm(config):
     return config['target_height_feet'] * 304.8  # Convert feet to mm
 
 def get_output_dir(config):
+    """Get the output directory path within the project directory"""
     base_name = Path(config['input_file']).stem
     output_dir_name = f"{base_name}_{config['target_height_feet']}ft_{config['height_axis']}_height"
-    return os.path.join(config['output_base_dir'], output_dir_name)
+    
+    # Use a 'outputs' directory in the current working directory
+    project_outputs = os.path.join(os.getcwd(), 'outputs')
+    if not os.path.exists(project_outputs):
+        os.makedirs(project_outputs)
+        
+    return os.path.join(project_outputs, output_dir_name)
 
 def get_axis_index(axis_letter):
     return {'x': 0, 'y': 1, 'z': 2}[axis_letter.lower()]
