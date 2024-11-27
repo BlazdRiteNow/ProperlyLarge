@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STL Processor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #cccccc;
+        }
+        #progress {
+            display: none;
+            margin-top: 20px;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>STL File Processor</h1>
+        <form id="uploadForm">
+            <div class="form-group">
+                <label for="stlFile">Select STL File:</label>
+                <input type="file" id="stlFile" accept=".stl" required>
+            </div>
+            <div class="form-group">
+                <label for="targetHeight">Target Height (feet):</label>
+                <input type="number" id="targetHeight" value="2" min="0.1" step="0.1" required>
+            </div>
+            <div class="form-group">
+                <label for="heightAxis">Height Axis:</label>
+                <select id="heightAxis" required>
+                    <option value="x">X</option>
+                    <option value="y">Y</option>
+                    <option value="z" selected>Z</option>
+                </select>
+            </div>
+            <button type="submit">Process STL</button>
+        </form>
+        <div id="progress">
+            <p>Processing... Please wait.</p>
+        </div>
+        <div id="error" class="error"></div>
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            const file = document.getElementById('stlFile').files[0];
+            const targetHeight = document.getElementById('targetHeight').value;
+            const heightAxis = document.getElementById('heightAxis').value;
+            
+            if (!file) {
+                showError('Please select a file');
+                return;
+            }
+
+            // Show progress and disable form
+            document.getElementById('progress').style.display = 'block';
+            document.querySelector('button').disabled = true;
+            document.getElementById('error').textContent = '';
+
+            formData.append('file', file);
+            formData.append('target_height_feet', targetHeight);
+            formData.append('height_axis', heightAxis);
+
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Processing failed');
+                }
+
+                // Handle successful response
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = 'processed_stl.zip';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(downloadUrl);
+
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                // Reset UI
+                document.getElementById('progress').style.display = 'none';
+                document.querySelector('button').disabled = false;
+            }
+        });
+
+        function showError(message) {
+            document.getElementById('error').textContent = message;
+        }
+    </script>
+</body>
+</html> 
