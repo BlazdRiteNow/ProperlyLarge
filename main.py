@@ -3,6 +3,8 @@ import numpy as np
 import os
 import shutil
 from pathlib import Path
+import gc  # Garbage collection
+import tempfile
 
 def process_stl(config):
     """Main processing function that takes a config dictionary"""
@@ -14,8 +16,22 @@ def process_stl(config):
         # Create output directory
         output_dir = get_output_dir(config)
         if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
+            # Ensure we can remove all files
+            for root, dirs, files in os.walk(output_dir, topdown=False):
+                for name in files:
+                    os.remove(os.path.join(root, name))
+                for name in dirs:
+                    os.rmdir(os.path.join(root, name))
+            os.rmdir(output_dir)
         os.makedirs(output_dir)
+        
+        # Load mesh
+        mesh = trimesh.load_mesh(config['input_file'])
+        
+        # Note about large meshes
+        if len(mesh.vertices) > 100000:
+            print(f"Warning: Large mesh detected ({len(mesh.vertices)} vertices)")
+            print("Mesh simplification is not available in this environment")
         
         # Load and scale model
         print(f"Loading and scaling model to {config['target_height_feet']} feet along {config['height_axis']}-axis...")
@@ -36,6 +52,8 @@ def process_stl(config):
         print(f"- Total pieces: {piece_count}")
         print(f"- Output directory: {output_dir}")
         
+        return output_dir  # Return the output directory path
+        
     except Exception as e:
         print(f"Error in process_stl: {str(e)}")
         raise
@@ -47,9 +65,16 @@ def get_target_height_mm(config):
     return config['target_height_feet'] * 304.8  # Convert feet to mm
 
 def get_output_dir(config):
+    """Get the output directory path within the project directory"""
     base_name = Path(config['input_file']).stem
     output_dir_name = f"{base_name}_{config['target_height_feet']}ft_{config['height_axis']}_height"
-    return os.path.join(config['output_base_dir'], output_dir_name)
+    
+    # Use a 'outputs' directory in the current working directory
+    project_outputs = os.path.join(os.getcwd(), 'outputs')
+    if not os.path.exists(project_outputs):
+        os.makedirs(project_outputs)
+        
+    return os.path.join(project_outputs, output_dir_name)
 
 def get_axis_index(axis_letter):
     return {'x': 0, 'y': 1, 'z': 2}[axis_letter.lower()]

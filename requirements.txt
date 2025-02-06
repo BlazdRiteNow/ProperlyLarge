@@ -1,0 +1,6 @@
+trimesh[easy]
+numpy
+flask
+werkzeug
+pathlib
+pymeshlab

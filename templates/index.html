@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STL Processor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #cccccc;
+        }
+        #progress {
+            display: none;
+            margin-top: 20px;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+        .info-section {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .info-section h3 {
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        
+        .info-section h4 {
+            color: #2c3e50;
+            margin-top: 20px;
+        }
+        
+        .info-section ul, .info-section ol {
+            padding-left: 20px;
+        }
+        
+        .info-section li {
+            margin-bottom: 8px;
+        }
+        
+        .info-section ul ul {
+            margin-top: 8px;
+        }
+        
+        .note {
+            background-color: #fff3cd;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #ffc107;
+            margin-top: 20px;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .input-group input {
+            flex: 2;
+        }
+        
+        .input-group select {
+            flex: 1;
+            width: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>STL File Processor</h1>
+        
+        <div class="info-section">
+            <h3>About This Tool</h3>
+            <p>This tool helps you scale up 3D models while automatically splitting them to fit your printer's bed size. Perfect for creating larger-than-life prints!</p>
+            
+            <h4>Important Requirements:</h4>
+            <ul>
+                <li><strong>File Size:</strong> Maximum 100MB STL file size</li>
+                <li><strong>Model Orientation:</strong> Before uploading, please check your model's orientation:
+                    <ul>
+                        <li>The height axis you select should align with your model's tallest dimension</li>
+                        <li>Incorrect axis selection may result in unnecessary splitting and more pieces than needed</li>
+                        <li>Example: For a standing figure, the Z-axis is typically the height</li>
+                    </ul>
+                </li>
+                <li><strong>Target Height:</strong> Enter your desired final height in either feet or millimeters</li>
+                <li><strong>Bed Size:</strong> Enter your printer's actual bed size in millimeters - the tool will automatically apply a safety margin for printability</li>
+            </ul>
+
+            <h4>How It Works:</h4>
+            <ol>
+                <li>Upload your STL file</li>
+                <li>Set your target height (in feet or millimeters)</li>
+                <li>Choose the correct height axis</li>
+                <li>Enter your printer's bed size</li>
+                <li>The tool will scale your model and split it into printable pieces</li>
+                <li>Download the resulting ZIP file containing all pieces</li>
+            </ol>
+
+            <p class="note"><strong>Note:</strong> Some models may have non-manifold edges. The tool will process these, but you may need to repair individual pieces in your slicing software before printing.</p>
+        </div>
+
+        <form id="uploadForm">
+            <div class="form-group">
+                <label for="stlFile">Select STL File:</label>
+                <input type="file" id="stlFile" accept=".stl" required>
+            </div>
+            <div class="form-group">
+                <label for="targetHeight">Target Height:</label>
+                <div class="input-group">
+                    <input type="number" id="targetHeight" value="2" min="0.1" step="0.1" required>
+                    <select id="heightUnit" onchange="updateHeightInput()">
+                        <option value="feet">Feet</option>
+                        <option value="mm">Millimeters</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="printerBedSize">Printer Bed Size (mm):</label>
+                <input type="number" id="printerBedSize" value="300" min="100" step="1" required>
+            </div>
+            <div class="form-group">
+                <label for="safetyMargin">Safety Margin (mm):</label>
+                <input type="number" id="safetyMargin" value="5" min="0" step="1" required>
+            </div>
+            <div class="form-group">
+                <label for="heightAxis">Height Axis:</label>
+                <select id="heightAxis" required>
+                    <option value="x">X</option>
+                    <option value="y">Y</option>
+                    <option value="z" selected>Z</option>
+                </select>
+            </div>
+            <button type="submit">Process STL</button>
+        </form>
+        <div id="progress">
+            <p>Processing... Please wait.</p>
+        </div>
+        <div id="error" class="error"></div>
+    </div>
+
+    <script>
+        function updateHeightInput() {
+            const heightInput = document.getElementById('targetHeight');
+            const unit = document.getElementById('heightUnit').value;
+            const currentValue = parseFloat(heightInput.value);
+            
+            if (isNaN(currentValue)) return;
+            
+            if (unit === 'feet') {
+                // Convert from mm to feet
+                if (currentValue > 1000) {  // Assume it was in mm
+                    heightInput.value = (currentValue / 304.8).toFixed(1);
+                }
+                heightInput.step = "0.1";
+                heightInput.min = "0.1";
+            } else {  // mm
+                // Convert from feet to mm
+                if (currentValue < 100) {  // Assume it was in feet
+                    heightInput.value = (currentValue * 304.8).toFixed(0);
+                }
+                heightInput.step = "1";
+                heightInput.min = "1";
+            }
+        }
+
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            const file = document.getElementById('stlFile').files[0];
+            const heightValue = document.getElementById('targetHeight').value;
+            const heightUnit = document.getElementById('heightUnit').value;
+            const heightAxis = document.getElementById('heightAxis').value;
+            const printerBedSize = document.getElementById('printerBedSize').value;
+            const safetyMargin = document.getElementById('safetyMargin').value;
+            
+            if (!file) {
+                showError('Please select a file');
+                return;
+            }
+
+            // Convert height to feet if it's in mm
+            const targetHeightFeet = heightUnit === 'mm' ? 
+                (parseFloat(heightValue) / 304.8) : 
+                parseFloat(heightValue);
+
+            formData.append('file', file);
+            formData.append('target_height_feet', targetHeightFeet);
+            formData.append('height_axis', heightAxis);
+            formData.append('printer_bed_size', printerBedSize);
+            formData.append('safety_margin', safetyMargin);
+
+            // Show progress and disable form
+            document.getElementById('progress').style.display = 'block';
+            document.querySelector('button').disabled = true;
+            document.getElementById('error').textContent = '';
+
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Processing failed');
+                }
+
+                // Handle successful response
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = 'processed_stl.zip';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(downloadUrl);
+
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                // Reset UI
+                document.getElementById('progress').style.display = 'none';
+                document.querySelector('button').disabled = false;
+            }
+        });
+
+        function showError(message) {
+            document.getElementById('error').textContent = message;
+        }
+    </script>
+</body>
+</html> 
